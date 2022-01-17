@@ -1,0 +1,595 @@
+Logistic Regression
+
+import numpy as np
+import pandas as pd
+import re
+from matplotlib import pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve, confusion_matrix, multilabel_confusion_matrix, classification_report
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+import warnings
+warnings.filterwarnings('ignore')
+train_set = pd.read_csv('../ds/train.csv')
+test_set = pd.read_csv('../ds/test.csv')
+test_labels = pd.read_csv('../ds/test_labels.csv')
+Data cleaning and analisys
+Remove the comments containing labels with -1
+test_set = test_set[test_labels['toxic'] != -1]
+test_labels = test_labels[test_labels['toxic'] != -1]
+test_features = test_set.comment_text
+train_features = train_set.comment_text
+#print('test labels', test_labels.head(10))
+train_labels = train_set.drop(['id', 'comment_text'], axis = 1)
+test_labels = test_labels.drop(['id'], axis = 1)
+labels = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+train_features
+0         Explanation\nWhy the edits made under my usern...
+1         D'aww! He matches this background colour I'm s...
+2         Hey man, I'm really not trying to edit war. It...
+3         "\nMore\nI can't make any real suggestions on ...
+4         You, sir, are my hero. Any chance you remember...
+                                ...                        
+159566    ":::::And for the second time of asking, when ...
+159567    You should be ashamed of yourself \n\nThat is ...
+159568    Spitzer \n\nUmm, theres no actual article for ...
+159569    And it looks like it was actually you who put ...
+159570    "\nAnd ... I really don't think you understand...
+Name: comment_text, Length: 159571, dtype: object
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"what's", "what is ", text)
+    text = re.sub(r"\'s", " ", text)
+    text = re.sub(r"\'ve", " have ", text)
+    text = re.sub(r"can't", "can not ", text)
+    text = re.sub(r"n't", " not ", text)
+    text = re.sub(r"i'm", "i am ", text)
+    text = re.sub(r"\'re", " are ", text)
+    text = re.sub(r"\'d", " would ", text)
+    text = re.sub(r"\'ll", " will ", text)
+    text = re.sub(r"\'scuse", " excuse ", text)
+    text = re.sub('\W', ' ', text)
+    text = re.sub('\s+', ' ', text)
+    text = text.strip(' ')
+    return text
+
+cleaned_train_features = train_features.map(lambda com : clean_text(com))
+cleaned_test_features = test_features.map(lambda com : clean_text(com))
+ 
+X_train = cleaned_train_features
+X_test = cleaned_test_features
+y_train = train_labels
+y_test = test_labels
+labels = list(train_labels.columns)
+labels
+['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+ 
+Plot ROC curve
+def plot_roc_curve(test_features, predict_prob):
+    fpr, tpr, thresholds = roc_curve(test_features, predict_prob)
+    plt.plot(fpr, tpr)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0])
+    plt.title('ROC curve for toxic comments')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.grid(True)
+    plt.legend(labels)
+ 
+Evaluation
+def evaluation(pipeline):    
+    pipeline.fit(X_train, y_train)
+    predictions = pipeline.predict(X_test)
+    pred_proba = pipeline.predict_proba(X_test)
+    print('ROC-AUC: ', roc_auc_score(y_test, pred_proba))
+    print('Accuracy: ', accuracy_score(y_test, predictions))
+    
+    print('confusion matrices: ')
+    print(multilabel_confusion_matrix(y_test, predictions))
+    print('classification_report: ')
+    print(classification_report(y_test, predictions, target_names=labels))
+
+    for label in labels:
+        pipeline.fit(X_train, y_train[label])
+        pred_proba = pipeline.predict_proba(X_test)[:,1]
+        plot_roc_curve(y_test[label], pred_proba)
+ 
+CountVectorizer: BoW
+from sklearn.feature_extraction.text import CountVectorizer
+
+analyzers = ['word', 'char', 'char_wb']
+
+for anlyz in analyzers:
+    pipeline = Pipeline([
+        ('bow', CountVectorizer(analyzer= anlyz, stop_words='english')),
+        ('lr_bw', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+    print('Logistic Regression Classifier: BoW (Analyzer = {})'.format(anlyz))
+    evaluation(pipeline)
+Logistic Regression Classifier: BoW (Analyzer = word)
+ROC-AUC:  0.9373121723266933
+Accuracy:  0.8791928475413423
+confusion matrices: 
+[[[54760  3128]
+  [ 1744  4346]]
+
+ [[63430   181]
+  [  225   142]]
+
+ [[59096  1191]
+  [ 1369  2322]]
+
+ [[63580   187]
+  [  155    56]]
+
+ [[59741   810]
+  [ 1896  1531]]
+
+ [[63075   191]
+  [  574   138]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.58      0.71      0.64      6090
+ severe_toxic       0.44      0.39      0.41       367
+      obscene       0.66      0.63      0.64      3691
+       threat       0.23      0.27      0.25       211
+       insult       0.65      0.45      0.53      3427
+identity_hate       0.42      0.19      0.27       712
+
+    micro avg       0.60      0.59      0.59     14498
+    macro avg       0.50      0.44      0.46     14498
+ weighted avg       0.60      0.59      0.59     14498
+  samples avg       0.06      0.05      0.06     14498
+
+Logistic Regression Classifier: BoW (Analyzer = char)
+ROC-AUC:  0.779066163927455
+Accuracy:  0.896777017099628
+confusion matrices: 
+[[[57501   387]
+  [ 5834   256]]
+
+ [[63479   132]
+  [  343    24]]
+
+ [[60073   214]
+  [ 3557   134]]
+
+ [[63689    78]
+  [  211     0]]
+
+ [[60363   188]
+  [ 3340    87]]
+
+ [[63242    24]
+  [  697    15]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.40      0.04      0.08      6090
+ severe_toxic       0.15      0.07      0.09       367
+      obscene       0.39      0.04      0.07      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.32      0.03      0.05      3427
+identity_hate       0.38      0.02      0.04       712
+
+    micro avg       0.34      0.04      0.06     14498
+    macro avg       0.27      0.03      0.05     14498
+ weighted avg       0.36      0.04      0.06     14498
+  samples avg       0.00      0.00      0.00     14498
+
+Logistic Regression Classifier: BoW (Analyzer = char_wb)
+ROC-AUC:  0.7795349166383798
+Accuracy:  0.896104911063178
+confusion matrices: 
+[[[57459   429]
+  [ 5837   253]]
+
+ [[63477   134]
+  [  345    22]]
+
+ [[60021   266]
+  [ 3555   136]]
+
+ [[63645   122]
+  [  211     0]]
+
+ [[60336   215]
+  [ 3340    87]]
+
+ [[63239    27]
+  [  697    15]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.37      0.04      0.07      6090
+ severe_toxic       0.14      0.06      0.08       367
+      obscene       0.34      0.04      0.07      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.29      0.03      0.05      3427
+identity_hate       0.36      0.02      0.04       712
+
+    micro avg       0.30      0.04      0.06     14498
+    macro avg       0.25      0.03      0.05     14498
+ weighted avg       0.33      0.04      0.06     14498
+  samples avg       0.00      0.00      0.00     14498
+
+
+ 
+TF-IDF
+analyzers = ['word', 'char', 'char_wb']
+
+for anlyz in analyzers:
+    pipeline = Pipeline([
+        ('tfidf', TfidfVectorizer(analyzer=anlyz, stop_words='english', ngram_range=(1,2))),
+        ('lr_model', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+    print('Logistic Regression Classifier: TF-IDF (Analyzer = {})'.format(anlyz))
+    evaluation(pipeline)
+Logistic Regression Classifier: TF-IDF (Analyzer = word)
+ROC-AUC:  0.9734593858887571
+Accuracy:  0.8984025758854606
+confusion matrices: 
+[[[55881  2007]
+  [ 2016  4074]]
+
+ [[63345   266]
+  [  230   137]]
+
+ [[59540   747]
+  [ 1421  2270]]
+
+ [[63725    42]
+  [  184    27]]
+
+ [[59710   841]
+  [ 1622  1805]]
+
+ [[63168    98]
+  [  524   188]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.67      0.67      0.67      6090
+ severe_toxic       0.34      0.37      0.36       367
+      obscene       0.75      0.62      0.68      3691
+       threat       0.39      0.13      0.19       211
+       insult       0.68      0.53      0.59      3427
+identity_hate       0.66      0.26      0.38       712
+
+    micro avg       0.68      0.59      0.63     14498
+    macro avg       0.58      0.43      0.48     14498
+ weighted avg       0.68      0.59      0.62     14498
+  samples avg       0.06      0.05      0.05     14498
+
+Logistic Regression Classifier: TF-IDF (Analyzer = char)
+ROC-AUC:  0.9340598836314563
+Accuracy:  0.8983244240207572
+confusion matrices: 
+[[[56666  1222]
+  [ 3491  2599]]
+
+ [[63405   206]
+  [  279    88]]
+
+ [[59781   506]
+  [ 2053  1638]]
+
+ [[63758     9]
+  [  190    21]]
+
+ [[60038   513]
+  [ 2204  1223]]
+
+ [[63217    49]
+  [  585   127]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.68      0.43      0.52      6090
+ severe_toxic       0.30      0.24      0.27       367
+      obscene       0.76      0.44      0.56      3691
+       threat       0.70      0.10      0.17       211
+       insult       0.70      0.36      0.47      3427
+identity_hate       0.72      0.18      0.29       712
+
+    micro avg       0.69      0.39      0.50     14498
+    macro avg       0.64      0.29      0.38     14498
+ weighted avg       0.70      0.39      0.50     14498
+  samples avg       0.04      0.03      0.03     14498
+
+Logistic Regression Classifier: TF-IDF (Analyzer = char_wb)
+ROC-AUC:  0.9292260517490193
+Accuracy:  0.8986057707336897
+confusion matrices: 
+[[[56781  1107]
+  [ 3620  2470]]
+
+ [[63405   206]
+  [  293    74]]
+
+ [[59819   468]
+  [ 2148  1543]]
+
+ [[63763     4]
+  [  198    13]]
+
+ [[60057   494]
+  [ 2298  1129]]
+
+ [[63222    44]
+  [  603   109]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.69      0.41      0.51      6090
+ severe_toxic       0.26      0.20      0.23       367
+      obscene       0.77      0.42      0.54      3691
+       threat       0.76      0.06      0.11       211
+       insult       0.70      0.33      0.45      3427
+identity_hate       0.71      0.15      0.25       712
+
+    micro avg       0.70      0.37      0.48     14498
+    macro avg       0.65      0.26      0.35     14498
+ weighted avg       0.70      0.37      0.48     14498
+  samples avg       0.04      0.03      0.03     14498
+
+
+ 
+Hashing
+from sklearn.feature_extraction.text import HashingVectorizer
+
+analyzers = ['word', 'char', 'char_wb']
+
+for anlyz in analyzers:
+    if anlyz == 'word':
+        pipeline = Pipeline([
+            ('hashing', HashingVectorizer(analyzer=anlyz, stop_words='english', alternate_sign=False)),
+            ('clf', OneVsRestClassifier(LogisticRegression()))
+        ])
+    else:
+        pipeline = Pipeline([
+            ('hashing', HashingVectorizer(analyzer=anlyz, alternate_sign=False)),
+            ('clf', OneVsRestClassifier(LogisticRegression()))
+        ])
+
+    print('Logistic Regression Classifier: Hashing (Analyzer = {})'.format(anlyz))
+    evaluation(pipeline)
+Logistic Regression Classifier: Hashing (Analyzer = word)
+ROC-AUC:  0.9724015978430884
+Accuracy:  0.8989183781925036
+confusion matrices: 
+[[[55798  2090]
+  [ 1923  4167]]
+
+ [[63444   167]
+  [  252   115]]
+
+ [[59572   715]
+  [ 1442  2249]]
+
+ [[63728    39]
+  [  170    41]]
+
+ [[59964   587]
+  [ 1724  1703]]
+
+ [[63200    66]
+  [  554   158]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.67      0.68      0.67      6090
+ severe_toxic       0.41      0.31      0.35       367
+      obscene       0.76      0.61      0.68      3691
+       threat       0.51      0.19      0.28       211
+       insult       0.74      0.50      0.60      3427
+identity_hate       0.71      0.22      0.34       712
+
+    micro avg       0.70      0.58      0.63     14498
+    macro avg       0.63      0.42      0.49     14498
+ weighted avg       0.70      0.58      0.63     14498
+  samples avg       0.06      0.05      0.05     14498
+
+Logistic Regression Classifier: Hashing (Analyzer = char)
+ROC-AUC:  0.8294276758125396
+Accuracy:  0.8837881771859076
+confusion matrices: 
+[[[56420  1468]
+  [ 4976  1114]]
+
+ [[63419   192]
+  [  325    42]]
+
+ [[59572   715]
+  [ 2936   755]]
+
+ [[63766     1]
+  [  210     1]]
+
+ [[60041   510]
+  [ 2920   507]]
+
+ [[63214    52]
+  [  686    26]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.43      0.18      0.26      6090
+ severe_toxic       0.18      0.11      0.14       367
+      obscene       0.51      0.20      0.29      3691
+       threat       0.50      0.00      0.01       211
+       insult       0.50      0.15      0.23      3427
+identity_hate       0.33      0.04      0.07       712
+
+    micro avg       0.45      0.17      0.25     14498
+    macro avg       0.41      0.12      0.17     14498
+ weighted avg       0.46      0.17      0.24     14498
+  samples avg       0.02      0.01      0.01     14498
+
+Logistic Regression Classifier: Hashing (Analyzer = char_wb)
+ROC-AUC:  0.8296511284479865
+Accuracy:  0.8835068304729751
+confusion matrices: 
+[[[56383  1505]
+  [ 5022  1068]]
+
+ [[63401   210]
+  [  336    31]]
+
+ [[59675   612]
+  [ 2986   705]]
+
+ [[63766     1]
+  [  211     0]]
+
+ [[60030   521]
+  [ 2970   457]]
+
+ [[63212    54]
+  [  693    19]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.42      0.18      0.25      6090
+ severe_toxic       0.13      0.08      0.10       367
+      obscene       0.54      0.19      0.28      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.47      0.13      0.21      3427
+identity_hate       0.26      0.03      0.05       712
+
+    micro avg       0.44      0.16      0.23     14498
+    macro avg       0.30      0.10      0.15     14498
+ weighted avg       0.44      0.16      0.23     14498
+  samples avg       0.02      0.01      0.01     14498
+
+
+ 
+CHI Square
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_selection import SelectKBest, chi2
+
+analyzers = ['word', 'char', 'char_wb']
+
+for anlyz in analyzers:
+    pipeline = Pipeline([
+        ('bow', TfidfVectorizer(sublinear_tf=True, max_df=0.5,stop_words='english')),
+        ('ch2', SelectKBest(chi2, k=2)),
+        ('lr_bw', OneVsRestClassifier(LogisticRegression()))
+    ])
+
+    print('Logistic Regression Classifier: BoW (Analyzer = {})'.format(anlyz))
+    evaluation(pipeline)
+Logistic Regression Classifier: BoW (Analyzer = word)
+ROC-AUC:  0.6560653093492589
+Accuracy:  0.9033417737347214
+confusion matrices: 
+[[[57495   393]
+  [ 4852  1238]]
+
+ [[63437   174]
+  [  342    25]]
+
+ [[59930   357]
+  [ 2547  1144]]
+
+ [[63765     2]
+  [  211     0]]
+
+ [[60225   326]
+  [ 2783   644]]
+
+ [[63255    11]
+  [  711     1]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.76      0.20      0.32      6090
+ severe_toxic       0.13      0.07      0.09       367
+      obscene       0.76      0.31      0.44      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.66      0.19      0.29      3427
+identity_hate       0.08      0.00      0.00       712
+
+    micro avg       0.71      0.21      0.32     14498
+    macro avg       0.40      0.13      0.19     14498
+ weighted avg       0.68      0.21      0.32     14498
+  samples avg       0.02      0.02      0.02     14498
+
+Logistic Regression Classifier: BoW (Analyzer = char)
+ROC-AUC:  0.6560653093492589
+Accuracy:  0.9033417737347214
+confusion matrices: 
+[[[57495   393]
+  [ 4852  1238]]
+
+ [[63437   174]
+  [  342    25]]
+
+ [[59930   357]
+  [ 2547  1144]]
+
+ [[63765     2]
+  [  211     0]]
+
+ [[60225   326]
+  [ 2783   644]]
+
+ [[63255    11]
+  [  711     1]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.76      0.20      0.32      6090
+ severe_toxic       0.13      0.07      0.09       367
+      obscene       0.76      0.31      0.44      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.66      0.19      0.29      3427
+identity_hate       0.08      0.00      0.00       712
+
+    micro avg       0.71      0.21      0.32     14498
+    macro avg       0.40      0.13      0.19     14498
+ weighted avg       0.68      0.21      0.32     14498
+  samples avg       0.02      0.02      0.02     14498
+
+Logistic Regression Classifier: BoW (Analyzer = char_wb)
+ROC-AUC:  0.6560653093492589
+Accuracy:  0.9033417737347214
+confusion matrices: 
+[[[57495   393]
+  [ 4852  1238]]
+
+ [[63437   174]
+  [  342    25]]
+
+ [[59930   357]
+  [ 2547  1144]]
+
+ [[63765     2]
+  [  211     0]]
+
+ [[60225   326]
+  [ 2783   644]]
+
+ [[63255    11]
+  [  711     1]]]
+classification_report: 
+               precision    recall  f1-score   support
+
+        toxic       0.76      0.20      0.32      6090
+ severe_toxic       0.13      0.07      0.09       367
+      obscene       0.76      0.31      0.44      3691
+       threat       0.00      0.00      0.00       211
+       insult       0.66      0.19      0.29      3427
+identity_hate       0.08      0.00      0.00       712
+
+    micro avg       0.71      0.21      0.32     14498
+    macro avg       0.40      0.13      0.19     14498
+ weighted avg       0.68      0.21      0.32     14498
+  samples avg       0.02      0.02      0.02     14498
+
